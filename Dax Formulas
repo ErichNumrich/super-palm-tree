@@ -1,0 +1,15 @@
+Cumulative Open Qty = CALCULATE(SUM('Sales Order Backlog'[ Ordered Quantity]),ALLEXCEPT('Sales Order Backlog','Sales Order Backlog'[ Item]))
+
+Running Total By Ship Date and Order Number
+Cumulative Open Qty = 
+VAR _item = 'Sales Order Backlog'[ Item]
+VAR _key  = 'Sales Order Backlog'[OrderSort]
+RETURN
+CALCULATE(
+    SUM('Sales Order Backlog'[ Ordered Quantity]),
+    FILTER(
+        'Sales Order Backlog',
+        'Sales Order Backlog'[ Item] = _item &&
+        'Sales Order Backlog'[OrderSort] <= _key
+    )
+)
