@@ -1,0 +1,190 @@
+
+eislogo.gif	eXpress User		
+ Navigator Favorites
+
+Home	Logout	Preferences
+	Reports		Tools		Requests		Oracle Reports	
+	Logged in User ERICHNUMRICH (PRODCDB)(US)
+Object SQL : DOV CPC BOM Indented Bills Report
+SELECT X_UV.ORGANIZATION_CODE,
+              X_UV.ORGANIZATION_NAME,
+              X_UV.ITEM_NUMBER,
+              X_UV.ITEM_DESCRIPTION,
+              X_UV.PLAN_LEVEL,
+              (select meaning
+from   fnd_lookup_values
+where lookup_type = 'WIP_SUPPLY' and lookup_code =X_UV.WIP_SUPPLY_TYPE and language = userenv('lang') ),
+              X_UV.COMPONENT_QUANTITY,
+              X_UV.SORT_ORDER,
+              X_UV.GROUP_ID,
+              (select msib.inventory_item_status_code
+from   mtl_system_items_b msib
+where msib.segment1= X_UV.ITEM_NUMBER and msib.organization_id= X_UV.ORGANIZATION_ID),
+              X_UV.ITEM_COST,
+              X_UV.PUOM,
+              X_UV.INCLUDE_IN_ROLLUP_FLAG,
+              X_UV.COSTED_YES_NO,
+              X_UV.OPERATION_SEQ_NUM,
+              X_UV.PLANNING_FACTOR,
+              X_UV.COUNTRY_OF_ORIGIN,
+              X_UV.SCHEDULEB,
+              X_UV.TARRIF_CODE_IMPORT,
+              (select *
+from   (SELECT pv.vendor_name VENDOR_NAME
+from   po_lines_all pl,
+              po_headers_all ph,
+              po_vendors pv,
+              org_organization_definitions ood,
+              mtl_system_items_b msib
+where ph.org_id = pl.org_id and ood.organization_id = msib.organization_id and ood.operating_unit = ph.org_id and ph.po_header_id = pl.po_header_id and pl.item_id = msib.inventory_item_id and ph.vendor_id = pv.vendor_id and msib.inventory_item_id = X_UV.COMPONENT_ITEM_ID and msib.organization_id = X_UV.organization_id order by pl.creation_date desc)
+where rownum = 1),
+              (SELECT *
+FROM    ( SELECT decode(pvsa.attribute4,
+              NULL,
+              pv.segment1,
+              pv.segment1 || '-' || pvsa.attribute4) vendor_num
+FROM    po_lines_all pl,
+              po_headers_all ph,
+              po_vendors pv,
+              po_vendor_sites_all pvsa,
+              org_organization_definitions ood,
+              mtl_system_items_b msib
+WHERE  ph.org_id = pl.org_id
+AND     ood.organization_id = msib.organization_id
+AND      ood.operating_unit = ph.org_id
+AND     ph.po_header_id = pl.po_header_id
+AND     pl.item_id = msib.inventory_item_id
+AND      ph.vendor_id = pv.vendor_id
+AND     pv.vendor_id = pvsa.vendor_id
+AND      msib.inventory_item_id =x_uv.component_item_id
+AND     msib.organization_id =x_uv.organization_id
+ORDER BY pl.creation_date DESC )
+WHERE  ROWNUM = 1),
+              (select max(decode(sup_rownum,
+              1,
+              vendor_name,
+              null))
+from   (SELECT v.vendor_name VENDOR_NAME,
+              ROW_NUMBER() OVER(PARTITION BY X_UV.COMPONENT_ITEM_ID,
+              X_UV.organization_id
+ORDER BY msso.rank ASC) sup_rownum
+FROM   MRP_SOURCING_RULES msr,
+              mrp_sr_receipt_org msro,
+              mrp_sr_source_org msso,
+              apps.ap_suppliers v,
+              fnd_lookup_values_vl flv,
+              MRP_SR_ASSIGNMENTS msa,
+              MRP_ASSIGNMENT_SETS mas
+WHERE 1 = 1
+AND     msro.sourcing_rule_id = msr.sourcing_rule_id
+AND     msso.sr_receipt_id = msro.sr_receipt_id
+AND     v.vendor_id(+) = msso.vendor_id
+AND     flv.lookup_code = msso.source_type
+AND     flv.lookup_type = 'MRP_SOURCE_TYPE'
+AND     X_UV.COMPONENT_ITEM_ID = msa.inventory_item_id
+AND     x_uv.organization_id = msa.organization_id
+AND     msa.sourcing_rule_id = msr.sourcing_rule_id
+AND     mas.assignment_set_id = msa.assignment_set_id)),
+              (SELECT MAX(decode(sup_rownum,
+              1,
+              vendor_num,
+              NULL))
+FROM    ( SELECT v.segment1 vendor_num,
+              ROW_NUMBER() OVER (PARTITION BY x_uv.component_item_id,
+              x_uv.organization_id
+ORDER BY msso.rank ASC ) sup_rownum
+FROM    mrp_sourcing_rules msr,
+              mrp_sr_receipt_org msro,
+              mrp_sr_source_org msso,
+              apps.ap_suppliers v,
+              fnd_lookup_values_vl flv,
+              mrp_sr_assignments msa,
+              mrp_assignment_sets mas
+WHERE  1 = 1
+AND     msro.sourcing_rule_id = msr.sourcing_rule_id
+AND      msso.sr_receipt_id = msro.sr_receipt_id
+AND      v.vendor_id (+) = msso.vendor_id
+AND      flv.lookup_code = msso.source_type
+AND     flv.lookup_type = 'MRP_SOURCE_TYPE'
+AND     msa.inventory_item_id= x_uv.component_item_id
+AND     msa.organization_id = x_uv.organization_id
+AND     msa.sourcing_rule_id = msr.sourcing_rule_id
+AND     mas.assignment_set_id = msa.assignment_set_id )),
+              (select max(decode(sup_rownum,
+              2,
+              vendor_name,
+              null))
+from   (SELECT v.vendor_name VENDOR_NAME,
+              ROW_NUMBER() OVER(PARTITION BY X_UV.COMPONENT_ITEM_ID,
+              X_UV.organization_id
+ORDER BY msso.rank ASC) sup_rownum
+FROM   MRP_SOURCING_RULES msr,
+              mrp_sr_receipt_org msro,
+              mrp_sr_source_org msso,
+              apps.ap_suppliers v,
+              fnd_lookup_values_vl flv,
+              MRP_SR_ASSIGNMENTS msa,
+              MRP_ASSIGNMENT_SETS mas
+WHERE 1 = 1
+AND     msro.sourcing_rule_id = msr.sourcing_rule_id
+AND     msso.sr_receipt_id = msro.sr_receipt_id
+AND     v.vendor_id(+) = msso.vendor_id
+AND     flv.lookup_code = msso.source_type
+AND     flv.lookup_type = 'MRP_SOURCE_TYPE'
+AND     X_UV.COMPONENT_ITEM_ID = msa.inventory_item_id
+AND     x_uv.organization_id = msa.organization_id
+AND     msa.sourcing_rule_id = msr.sourcing_rule_id
+AND     mas.assignment_set_id = msa.assignment_set_id)),
+              (SELECT MAX(decode(sup_rownum,
+              2,
+              vendor_num,
+              NULL))
+FROM    ( SELECT v.segment1 vendor_num,
+              ROW_NUMBER() OVER (PARTITION BY x_uv.component_item_id,
+              x_uv.organization_id
+ORDER BY msso.rank ASC ) sup_rownum
+FROM    mrp_sourcing_rules msr,
+              mrp_sr_receipt_org msro,
+              mrp_sr_source_org msso,
+              apps.ap_suppliers v,
+              fnd_lookup_values_vl flv,
+              mrp_sr_assignments msa,
+              mrp_assignment_sets mas
+WHERE  1 = 1
+AND     msro.sourcing_rule_id = msr.sourcing_rule_id
+AND      msso.sr_receipt_id = msro.sr_receipt_id
+AND      v.vendor_id (+) = msso.vendor_id
+AND      flv.lookup_code = msso.source_type
+AND      flv.lookup_type = 'MRP_SOURCE_TYPE'
+AND     msa.inventory_item_id= x_uv.component_item_id
+AND     msa.organization_id = x_uv.organization_id
+AND     msa.sourcing_rule_id = msr.sourcing_rule_id
+AND     mas.assignment_set_id = msa.assignment_set_id )),
+              (select segment1
+from   mtl_system_items_b
+where inventory_item_id = X_UV.TOP_ITEM_ID and organization_id = X_UV.ORGANIZATION_ID ),
+              (select flv.meaning item_type_meaning
+from   apps.mtl_system_items_b msb,
+              apps.fnd_lookup_values flv
+where lookup_type ='ITEM_TYPE' and msb.item_type=flv.lookup_code
+AND     flv.language = USERENV('LANG')
+AND     msb.Inventory_item_id = X_UV.ASSEMBLY_ITEM_ID and msb.organization_id= X_UV.ORGANIZATION_ID ),
+              (select INVENTORY_ITEM_STATUS_CODE
+from   mtl_system_items_b
+where inventory_item_id = X_UV.TOP_ITEM_ID and organization_id = X_UV.ORGANIZATION_ID ) details ,
+              null publish_cols
+FROM   APPS.XXEIS_7805_UXQJXD_V X_UV
+WHERE 1=1
+AND     X_UV.ORGANIZATION_CODE IN ('HYD')
+AND     X_UV.SESSION_ID IN (123666)
+AND     'Active-New' IN (select INVENTORY_ITEM_STATUS_CODE
+from   mtl_system_items_b
+where inventory_item_id = X_UV.TOP_ITEM_ID and organization_id = X_UV.ORGANIZATION_ID )
+ORDER BY X_UV.GROUP_ID ASC,
+             X_UV.SORT_ORDER ASC
+
+Cancel
+
+
+Reports	Tools	Requests	Oracle Reports	Home	Logout	Preferences
+		Copyright (c) 2001-2026 EiS Technologies Inc. All rights reserved. Version: 8.0.4 (Build-2)
