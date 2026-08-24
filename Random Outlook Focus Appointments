@@ -1,0 +1,18 @@
+$outlook = New-Object -ComObject Outlook.Application
+$namespace = $outlook.GetNamespace("MAPI")
+$calendar = $namespace.GetDefaultFolder([Microsoft.Office.Interop.Outlook.OlDefaultFolders]::olFolderCalendar)
+
+$startDate = (Get-Date).Date
+for ($i = 1; $i -le 5; $i++) {
+    $randomDay = $startDate.AddDays($i)
+    if ($randomDay.DayOfWeek -ne 'Saturday' -and $randomDay.DayOfWeek -ne 'Sunday') {
+        $randomHour = Get-Random -Minimum 9 -Maximum 16
+        $randomMinute = (Get-Random -Minimum 0 -Maximum 2) * 30
+        
+        $appt = $outlook.CreateItem([Microsoft.Office.Interop.Outlook.OlItemType]::olAppointmentItem)
+        $appt.Subject = "Focus Block"
+        $appt.Start = $randomDay.AddHours($randomHour).AddMinutes($randomMinute)
+        $appt.Duration = 30
+        $appt.Save()
+    }
+}
