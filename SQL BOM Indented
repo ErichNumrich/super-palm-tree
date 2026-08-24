@@ -182,9 +182,3 @@ from   mtl_system_items_b
 where inventory_item_id = X_UV.TOP_ITEM_ID and organization_id = X_UV.ORGANIZATION_ID )
 ORDER BY X_UV.GROUP_ID ASC,
              X_UV.SORT_ORDER ASC
-
-Cancel
-
-
-Reports	Tools	Requests	Oracle Reports	Home	Logout	Preferences
-		Copyright (c) 2001-2026 EiS Technologies Inc. All rights reserved. Version: 8.0.4 (Build-2)
