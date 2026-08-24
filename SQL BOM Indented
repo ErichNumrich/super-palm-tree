@@ -1,9 +1,3 @@
-
-eislogo.gif	eXpress User		
- Navigator Favorites
-
-Home	Logout	Preferences
-	Reports		Tools		Requests		Oracle Reports	
 	Logged in User ERICHNUMRICH (PRODCDB)(US)
 Object SQL : DOV CPC BOM Indented Bills Report
 SELECT X_UV.ORGANIZATION_CODE,
