@@ -1,0 +1,28 @@
+	1. Programming vs Coding
+		a. Coding 
+			i. Coding is the act of translating instructions into a programming language
+		b. Programming 
+			i. End-to-end process of creating software. It includes planning, designing, coding, testing, debugging, deploying, and maintaining applications.
+	2. Python app 
+		a. The “Python app” from the Python website is basically the Python interpreter + standard tools packaged for your operating system.
+			i. It’s a programming runtime/environment used to build and run Python programs.
+	3. REPL - Read–eval–print loop (REPL)
+		a. Often referred to as "consoles", "terminals", or "prompts"
+		b. Also termed an interactive top level or language shell, is a simple interactive computer programming environment that takes single user inputs, executes them, and returns the result to the user.
+	4. Windows PowerShell
+		a. Windows PowerShell is a command-line tool and scripting language built into Windows. (More powerful version of Command Prompt.)
+		b. Instead of clicking through apps, you can type commands to:
+		c. navigate folders, run programs (like Python scripts), manage files, automate, repetitive tasks
+	5. Application Programming Interface (API)
+		a. Think a middleman that allows different software applications to talk to each other
+	6. Microsoft Azure
+		a. Microsoft's Cloud computing platform
+			i. Run virtual machines (servers)
+			ii. Host websites and APIs
+			iii. Store files and databases
+			iv. Build apps, AI, and analytics solutions
+			v. Set up networking, security, backup, and disaster recovery
+		b. Best for scale/performance: Oracle → ADLS/Synapse → Power BI Import (incremental refresh)
+		
+		
+	
