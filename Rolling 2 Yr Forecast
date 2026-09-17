@@ -1,0 +1,347 @@
+let
+    Source =
+        Oracle.Database(
+            "dsvldforddb06.dover-global.net:1521/biprod.dover-global.net",
+            [
+                HierarchicalNavigation = true,
+                CreateNavigationProperties = false
+            ]
+        ),
+
+    PROD_DW_HYDRO =
+        Source{[Schema = "PROD_DW_HYDRO"]}[Data],
+
+    T_SALES_ORDER_LINE_ITEMS_F =
+        PROD_DW_HYDRO{[Name = "T_SALES_ORDER_LINE_ITEMS_F"]}[Data],
+
+CurrentDateTime =
+    DateTime.LocalNow(),
+
+TwoYearsAgo =
+    DateTime.From(
+        Date.AddYears(
+            Date.From(CurrentDateTime),
+            -2
+        )
+    ),
+
+#"2023 Year Or After" =
+    Table.SelectRows(
+        T_SALES_ORDER_LINE_ITEMS_F,
+        each [BOOKED_DATE] >= TwoYearsAgo
+    ),
+
+    #"Hyd Org Key And Order" =
+        Table.SelectRows(
+            #"2023 Year Or After",
+            each
+                [ORGANIZATION_SKEY] = 1004
+                and [TRANSACTION_TYPE] = "ORDER"
+                and [ITEM_SKEY] <> null
+        ),
+
+  // Use TOTAL_ORDERED_QUANTITY as the demand field.
+    // Return 0 when there are no orders in the selected period.
+    SumDemand =
+        (InputTable as table) as number =>
+            let
+                Quantities =
+                    List.Transform(
+                        List.RemoveNulls(
+                            Table.Column(
+                                InputTable,
+                                "TOTAL_ORDERED_QUANTITY"
+                            )
+                        ),
+                        each Number.From(_)
+                    ),
+
+                TotalDemand =
+                    List.Sum(Quantities)
+            in
+                if TotalDemand = null then
+                    0
+                else
+                    TotalDemand,
+
+    // Use the latest booking date across the filtered dataset
+    LatestBookingDate =
+        Date.From(
+            List.Max(
+                List.RemoveNulls(
+                    Table.Column(
+                        #"Hyd Org Key And Order",
+                        "BOOKED_DATE"
+                    )
+                )
+            )
+        ),
+
+    AnalysisStartDate =
+    Date.AddYears(
+        Date.From(DateTime.LocalNow()),
+        -2
+    ),
+
+    TotalAnalysisDays =
+        Duration.Days(
+            LatestBookingDate - AnalysisStartDate
+        ) + 1,
+
+    // Group the source data by item
+    GroupedByItem =
+        Table.Group(
+            #"Hyd Org Key And Order",
+            {"ITEM_SKEY"},
+            {
+                {
+                    "ItemRows",
+                    each _,
+                    type table
+                }
+            }
+        ),
+
+    // Total demand by item
+    AddedTotalDemand =
+        Table.AddColumn(
+            GroupedByItem,
+            "Total Demand",
+            each SumDemand([ItemRows]),
+            type number
+        ),
+
+    // Average weekly demand by item
+    AddedAverageWeeklyDemand =
+        Table.AddColumn(
+            AddedTotalDemand,
+            "Average Weekly Demand",
+            each
+                [Total Demand] / (TotalAnalysisDays / 7),
+            type number
+        ),
+
+    // Average monthly demand by item
+    AddedAverageMonthlyDemand =
+        Table.AddColumn(
+            AddedAverageWeeklyDemand,
+            "Average Monthly Demand",
+            each
+                [Total Demand] / (TotalAnalysisDays / 30.4375),
+            type number
+        ),
+
+    // Average quarterly demand by item
+    AddedAverageQuarterlyDemand =
+        Table.AddColumn(
+            AddedAverageMonthlyDemand,
+            "Average Quarterly Demand",
+            each
+                [Total Demand] / (TotalAnalysisDays / 91.3125),
+            type number
+        ),
+
+    // Current rolling 12-month period
+    Current12MonthStart =
+        Date.AddDays(
+            LatestBookingDate,
+            -365
+        ),
+
+    // Previous rolling 12-month period
+    Previous12MonthStart =
+        Date.AddDays(
+            LatestBookingDate,
+            -730
+        ),
+
+    // Current rolling 12-month demand by item
+    AddedCurrent12MonthDemand =
+        Table.AddColumn(
+            AddedAverageQuarterlyDemand,
+            "Current 12-Month Demand",
+            each
+                SumDemand(
+                    Table.SelectRows(
+                        [ItemRows],
+                        (CurrentRow) =>
+                            Date.From(CurrentRow[BOOKED_DATE]) > Current12MonthStart
+                            and Date.From(CurrentRow[BOOKED_DATE]) <= LatestBookingDate
+                    )
+                ),
+            type number
+        ),
+
+    // Previous rolling 12-month demand by item
+    AddedPrevious12MonthDemand =
+        Table.AddColumn(
+            AddedCurrent12MonthDemand,
+            "Previous 12-Month Demand",
+            each
+                SumDemand(
+                    Table.SelectRows(
+                        [ItemRows],
+                        (PreviousRow) =>
+                            Date.From(PreviousRow[BOOKED_DATE]) > Previous12MonthStart
+                            and Date.From(PreviousRow[BOOKED_DATE]) <= Current12MonthStart
+                    )
+                ),
+            type number
+        ),
+
+    // Rolling 12-month growth rate by item
+    AddedRollingGrowthRate =
+        Table.AddColumn(
+            AddedPrevious12MonthDemand,
+            "Rolling 12-Month Growth Rate",
+            each
+                if [#"Previous 12-Month Demand"] = 0 then
+                    null
+                else
+                    (
+                        [#"Current 12-Month Demand"]
+                        / [#"Previous 12-Month Demand"]
+                    ) - 1,
+            type number
+        ),
+
+  // Forecast function.
+    // If the calculated forecast is 0, use the corresponding average demand instead.
+    ForecastDemand =
+        (
+            AverageDemand as nullable number,
+            GrowthRate as nullable number
+        ) as nullable number =>
+            let
+                CalculatedForecast =
+                    if AverageDemand = null or GrowthRate = null then
+                        null
+                    else
+                        AverageDemand * (1 + GrowthRate)
+            in
+                if CalculatedForecast = 0 then
+                    AverageDemand
+                else
+                    CalculatedForecast,
+                    
+    // Forecast weekly demand
+    AddedWeeklyForecast =
+        Table.AddColumn(
+            AddedRollingGrowthRate,
+            "Forecast Weekly Demand - Year 1",
+            each
+                ForecastDemand(
+                    [#"Average Weekly Demand"],
+                    [#"Rolling 12-Month Growth Rate"]
+                ),
+            type number
+        ),
+
+    // Forecast monthly demand
+    AddedMonthlyForecast =
+        Table.AddColumn(
+            AddedWeeklyForecast,
+            "Forecast Monthly Demand - Year 1",
+            each
+                ForecastDemand(
+                    [#"Average Monthly Demand"],
+                    [#"Rolling 12-Month Growth Rate"]
+                ),
+            type number
+        ),
+
+    // Forecast quarterly demand
+    AddedQuarterlyForecast =
+        Table.AddColumn(
+            AddedMonthlyForecast,
+            "Forecast Quarterly Demand - Year 1",
+            each
+                ForecastDemand(
+                    [#"Average Quarterly Demand"],
+                    [#"Rolling 12-Month Growth Rate"]
+                ),
+            type number
+        ),
+
+    // Remove the nested detail rows
+    RemovedItemRows =
+        Table.RemoveColumns(
+            AddedQuarterlyForecast,
+            {"ItemRows"}
+        ),
+
+    // Round demand and forecast values
+    RoundedValues =
+        Table.TransformColumns(
+            RemovedItemRows,
+            {
+                {
+                    "Total Demand",
+                    each Number.Round(_, 2),
+                    type number
+                },
+                {
+                    "Average Weekly Demand",
+                    each Number.Round(_, 2),
+                    type number
+                },
+                {
+                    "Average Monthly Demand",
+                    each Number.Round(_, 2),
+                    type number
+                },
+                {
+                    "Average Quarterly Demand",
+                    each Number.Round(_, 2),
+                    type number
+                },
+                {
+                    "Current 12-Month Demand",
+                    each Number.Round(_, 2),
+                    type number
+                },
+                {
+                    "Previous 12-Month Demand",
+                    each Number.Round(_, 2),
+                    type number
+                },
+                {
+                    "Rolling 12-Month Growth Rate",
+                    each
+                        if _ = null then
+                            null
+                        else
+                            Number.Round(_, 4),
+                    type number
+                },
+                {
+                    "Forecast Weekly Demand - Year 1",
+                    each
+                        if _ = null then
+                            null
+                        else
+                            Number.Round(_, 2),
+                    type number
+                },
+                {
+                    "Forecast Monthly Demand - Year 1",
+                    each
+                        if _ = null then
+                            null
+                        else
+                            Number.Round(_, 2),
+                    type number
+                },
+                {
+                    "Forecast Quarterly Demand - Year 1",
+                    each
+                        if _ = null then
+                            null
+                        else
+                            Number.Round(_, 2),
+                    type number
+                }
+            }
+        )
+in
+    RoundedValues
