@@ -14,26 +14,29 @@ let
     T_SALES_ORDER_LINE_ITEMS_F =
         PROD_DW_HYDRO{[Name = "T_SALES_ORDER_LINE_ITEMS_F"]}[Data],
 
-CurrentDateTime =
-    DateTime.LocalNow(),
+   CurrentDateTime =
+        DateTime.LocalNow(),
 
-TwoYearsAgo =
-    DateTime.From(
+    CurrentDate =
+        Date.From(CurrentDateTime),
+
+    AnalysisStartDate =
         Date.AddYears(
-            Date.From(CurrentDateTime),
+            CurrentDate,
             -2
-        )
-    ),
+        ),
 
-#"2023 Year Or After" =
-    Table.SelectRows(
-        T_SALES_ORDER_LINE_ITEMS_F,
-        each [BOOKED_DATE] >= TwoYearsAgo
-    ),
-
+    #"Last 2 Years" =
+        Table.SelectRows(
+            T_SALES_ORDER_LINE_ITEMS_F,
+            each
+                Date.From([BOOKED_DATE]) >= AnalysisStartDate
+                and Date.From([BOOKED_DATE]) <= CurrentDate
+        ),
+		
     #"Hyd Org Key And Order" =
         Table.SelectRows(
-            #"2023 Year Or After",
+            #"Last 2 Years",
             each
                 [ORGANIZATION_SKEY] = 1004
                 and [TRANSACTION_TYPE] = "ORDER"
@@ -83,7 +86,7 @@ TwoYearsAgo =
                 else
                     TotalDemand,
 
-    // Use the latest booking date across the filtered dataset
+    // Use the latest booking date for the rolling 12-month calculations
     LatestBookingDate =
         Date.From(
             List.Max(
@@ -96,51 +99,35 @@ TwoYearsAgo =
             )
         ),
 
-    AverageYears =
-        {
-            Date.Year(LatestBookingDate) - 1,
-            Date.Year(LatestBookingDate)
-        },
-
+    // Calculate average demand for a specific quarter
+    // across the two-year analysis period
     AverageDemandByQuarter =
         (
             InputTable as table,
             QuarterNumber as number
         ) as number =>
             let
-                DemandByYear =
-                    List.Transform(
-                        AverageYears,
-                        (YearNumber) =>
-                            SumDemand(
-                                Table.SelectRows(
-                                    InputTable,
-                                    each
-                                        Date.Year(
-                                            Date.From([BOOKED_DATE])
-                                        ) = YearNumber
-                                        and [Quarter Number] = QuarterNumber
-                                )
-                            )
+                QuarterDemand =
+                    SumDemand(
+                        Table.SelectRows(
+                            InputTable,
+                            each
+                                [Quarter Number] = QuarterNumber
+                                and Date.From([BOOKED_DATE]) >= AnalysisStartDate
+                                and Date.From([BOOKED_DATE]) <= CurrentDate
+                        )
                     ),
 
                 AverageDemand =
-                    List.Average(DemandByYear)
+                    QuarterDemand / 2
             in
-                if AverageDemand = null then
-                    0
-                else
-                    AverageDemand,
+                AverageDemand,
+				
 
-    AnalysisStartDate =
-    Date.AddYears(
-        Date.From(DateTime.LocalNow()),
-        -2
-    ),
 
     TotalAnalysisDays =
         Duration.Days(
-            LatestBookingDate - AnalysisStartDate
+            CurrentDate - AnalysisStartDate
         ) + 1,
 
     // Group the source data by item
@@ -380,10 +367,62 @@ TwoYearsAgo =
             type number
         ),
 
+    // Forecast quarterly 1 demand
+    AddedQuarterly1Forecast =
+        Table.AddColumn(
+            AddedMonthlyForecast,
+            "Forecast Quarterly 1 Demand - Year 1",
+            each
+                ForecastDemand(
+                    [#"Q1 Average Demand"],
+                    [#"Rolling 12-Month Growth Rate"]
+                ),
+            type number
+        ),
+
+    // Forecast quarterly 2 demand
+    AddedQuarterly2Forecast =
+        Table.AddColumn(
+            AddedQuarterly1Forecast,
+            "Forecast Quarterly 2 Demand - Year 1",
+            each
+                ForecastDemand(
+                    [#"Q2 Average Demand"],
+                    [#"Rolling 12-Month Growth Rate"]
+                ),
+            type number
+        ),
+
+    // Forecast quarterly 3 demand
+    AddedQuarterly3Forecast =
+        Table.AddColumn(
+            AddedQuarterly2Forecast,
+            "Forecast Quarterly 3 Demand - Year 1",
+            each
+                ForecastDemand(
+                    [#"Q3 Average Demand"],
+                    [#"Rolling 12-Month Growth Rate"]
+                ),
+            type number
+        ),
+
+    // Forecast quarterly 4 demand
+    AddedQuarterly4Forecast =
+        Table.AddColumn(
+            AddedQuarterly3Forecast,
+            "Forecast Quarterly 4 Demand - Year 1",
+            each
+                ForecastDemand(
+                    [#"Q4 Average Demand"],
+                    [#"Rolling 12-Month Growth Rate"]
+                ),
+            type number
+        ),
+
     // Forecast quarterly demand
     AddedQuarterlyForecast =
         Table.AddColumn(
-            AddedMonthlyForecast,
+            AddedQuarterly4Forecast,
             "Forecast Quarterly Demand - Year 1",
             each
                 ForecastDemand(
@@ -471,7 +510,7 @@ TwoYearsAgo =
                             Number.Round(_, 2),
                     type number
                 },
-                                {
+                {
                     "Q1 Average Demand",
                     each Number.Round(_, 2),
                     type number
@@ -490,8 +529,30 @@ TwoYearsAgo =
                     "Q4 Average Demand",
                     each Number.Round(_, 2),
                     type number
+                },
+                {
+                    "Forecast Quarterly 1 Demand - Year 1",
+                    each Number.Round(_, 0),
+                    type number
+                },
+                {
+                    "Forecast Quarterly 2 Demand - Year 1",
+                    each Number.Round(_, 0),
+                    type number
+                },
+                {
+                    "Forecast Quarterly 3 Demand - Year 1",
+                    each Number.Round(_, 0),
+                    type number
+                },
+                {
+                    "Forecast Quarterly 4 Demand - Year 1",
+                    each Number.Round(_, 0),
+                    type number
                 }
+
             }
-        )
+        ),
+    #"Filtered Rows" = Table.SelectRows(RoundedValues, each [ITEM_SKEY] = 12300)
 in
-    RoundedValues
+    #"Filtered Rows"
