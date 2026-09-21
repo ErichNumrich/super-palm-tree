@@ -340,6 +340,22 @@ let
                     AverageDemand
                 else
                     CalculatedForecast,
+
+    // Quarterly forecast function.
+    // Apply the growth rate only when the absolute change is less than 25%.
+    QuarterlyForecastDemand =
+    (
+        AverageDemand as nullable number,
+        GrowthRate as nullable number
+    ) as nullable number =>
+        if AverageDemand = null then
+            null
+        else if GrowthRate = null then
+            AverageDemand
+        else if GrowthRate >= -0.25 and GrowthRate <= 0.25 then
+            AverageDemand * (1 + GrowthRate)
+        else
+            AverageDemand,
                     
     // Forecast weekly demand
     AddedWeeklyForecast =
@@ -367,13 +383,13 @@ let
             type number
         ),
 
-    // Forecast quarterly 1 demand
+        // Forecast quarterly 1 demand
     AddedQuarterly1Forecast =
         Table.AddColumn(
             AddedMonthlyForecast,
             "Forecast Quarterly 1 Demand - Year 1",
             each
-                ForecastDemand(
+                QuarterlyForecastDemand(
                     [#"Q1 Average Demand"],
                     [#"Rolling 12-Month Growth Rate"]
                 ),
@@ -386,7 +402,7 @@ let
             AddedQuarterly1Forecast,
             "Forecast Quarterly 2 Demand - Year 1",
             each
-                ForecastDemand(
+                QuarterlyForecastDemand(
                     [#"Q2 Average Demand"],
                     [#"Rolling 12-Month Growth Rate"]
                 ),
@@ -399,7 +415,7 @@ let
             AddedQuarterly2Forecast,
             "Forecast Quarterly 3 Demand - Year 1",
             each
-                ForecastDemand(
+                QuarterlyForecastDemand(
                     [#"Q3 Average Demand"],
                     [#"Rolling 12-Month Growth Rate"]
                 ),
@@ -412,13 +428,12 @@ let
             AddedQuarterly3Forecast,
             "Forecast Quarterly 4 Demand - Year 1",
             each
-                ForecastDemand(
+                QuarterlyForecastDemand(
                     [#"Q4 Average Demand"],
                     [#"Rolling 12-Month Growth Rate"]
                 ),
             type number
         ),
-
     // Forecast quarterly demand
     AddedQuarterlyForecast =
         Table.AddColumn(
