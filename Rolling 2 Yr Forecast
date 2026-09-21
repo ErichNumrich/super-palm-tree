@@ -39,6 +39,25 @@ TwoYearsAgo =
                 and [TRANSACTION_TYPE] = "ORDER"
                 and [ITEM_SKEY] <> null
         ),
+    #"Merged Queries" = Table.NestedJoin(#"Hyd Org Key And Order", {"BILL_TO_CUST_BUS_PURPOSE_SKEY"}, #"Customer Business Purpose", {"CUSTOMER_BUSINESS_PURPOSE_SKEY"}, "Customer Business Purpose", JoinKind.LeftOuter),
+    #"Expanded Customer Business Purpose" = Table.ExpandTableColumn(#"Merged Queries", "Customer Business Purpose", {"CUSTOMER_CLASSIFICATION"}, {"Customer Business Purpose.CUSTOMER_CLASSIFICATION"}),
+      
+      #"Filter OUT Intercompany" =
+        Table.SelectRows(
+            #"Expanded Customer Business Purpose",
+            each
+                [Customer Business Purpose.CUSTOMER_CLASSIFICATION]
+                    <> "INTERCOMPANY"
+        ),
+
+    // Add the calendar quarter number
+    AddedQuarterNumber =
+        Table.AddColumn(
+            #"Filter OUT Intercompany",
+            "Quarter Number",
+            each Date.QuarterOfYear(Date.From([BOOKED_DATE])),
+            Int64.Type
+        ),
 
   // Use TOTAL_ORDERED_QUANTITY as the demand field.
     // Return 0 when there are no orders in the selected period.
@@ -70,12 +89,48 @@ TwoYearsAgo =
             List.Max(
                 List.RemoveNulls(
                     Table.Column(
-                        #"Hyd Org Key And Order",
+                        AddedQuarterNumber,
                         "BOOKED_DATE"
                     )
                 )
             )
         ),
+
+    AverageYears =
+        {
+            Date.Year(LatestBookingDate) - 1,
+            Date.Year(LatestBookingDate)
+        },
+
+    AverageDemandByQuarter =
+        (
+            InputTable as table,
+            QuarterNumber as number
+        ) as number =>
+            let
+                DemandByYear =
+                    List.Transform(
+                        AverageYears,
+                        (YearNumber) =>
+                            SumDemand(
+                                Table.SelectRows(
+                                    InputTable,
+                                    each
+                                        Date.Year(
+                                            Date.From([BOOKED_DATE])
+                                        ) = YearNumber
+                                        and [Quarter Number] = QuarterNumber
+                                )
+                            )
+                    ),
+
+                AverageDemand =
+                    List.Average(DemandByYear)
+            in
+                if AverageDemand = null then
+                    0
+                else
+                    AverageDemand,
 
     AnalysisStartDate =
     Date.AddYears(
@@ -91,7 +146,7 @@ TwoYearsAgo =
     // Group the source data by item
     GroupedByItem =
         Table.Group(
-            #"Hyd Org Key And Order",
+            AddedQuarterNumber,
             {"ITEM_SKEY"},
             {
                 {
@@ -131,15 +186,75 @@ TwoYearsAgo =
             type number
         ),
 
-    // Average quarterly demand by item
-    AddedAverageQuarterlyDemand =
+    // Average Q1 demand by item
+    AddedQ1AverageDemand =
         Table.AddColumn(
             AddedAverageMonthlyDemand,
-            "Average Quarterly Demand",
+            "Q1 Average Demand",
             each
-                [Total Demand] / (TotalAnalysisDays / 91.3125),
+                AverageDemandByQuarter(
+                    [ItemRows],
+                    1
+                ),
             type number
         ),
+
+    // Average Q2 demand by item
+    AddedQ2AverageDemand =
+        Table.AddColumn(
+            AddedQ1AverageDemand,
+            "Q2 Average Demand",
+            each
+                AverageDemandByQuarter(
+                    [ItemRows],
+                    2
+                ),
+            type number
+        ),
+
+    // Average Q3 demand by item
+    AddedQ3AverageDemand =
+        Table.AddColumn(
+            AddedQ2AverageDemand,
+            "Q3 Average Demand",
+            each
+                AverageDemandByQuarter(
+                    [ItemRows],
+                    3
+                ),
+            type number
+        ),
+
+    // Average Q4 demand by item
+    AddedQ4AverageDemand =
+        Table.AddColumn(
+            AddedQ3AverageDemand,
+            "Q4 Average Demand",
+            each
+                AverageDemandByQuarter(
+                    [ItemRows],
+                    4
+                ),
+            type number
+        ),
+
+    // Overall average quarterly demand across Q1 through Q4
+    AddedAverageQuarterlyDemand =
+        Table.AddColumn(
+            AddedQ4AverageDemand,
+            "Average Quarterly Demand",
+            each
+                List.Average(
+                    {
+                        [Q1 Average Demand],
+                        [Q2 Average Demand],
+                        [Q3 Average Demand],
+                        [Q4 Average Demand]
+                    }
+                ),
+            type number
+        ),
+
 
     // Current rolling 12-month period
     Current12MonthStart =
@@ -205,6 +320,21 @@ TwoYearsAgo =
             type number
         ),
 
+    // Flag growth rates with an increase or decrease greater than 25%
+    AddedGrowthRateFlag =
+        Table.AddColumn(
+            AddedRollingGrowthRate,
+            "Growth Rate Greater Than 25% Change",
+            each
+                if [#"Rolling 12-Month Growth Rate"] <> null
+                    and Number.Abs([#"Rolling 12-Month Growth Rate"]) > 0.25
+                then
+                    "Yes"
+                else
+                    "No",
+            type text
+        ),
+        
   // Forecast function.
     // If the calculated forecast is 0, use the corresponding average demand instead.
     ForecastDemand =
@@ -227,7 +357,7 @@ TwoYearsAgo =
     // Forecast weekly demand
     AddedWeeklyForecast =
         Table.AddColumn(
-            AddedRollingGrowthRate,
+            AddedGrowthRateFlag,
             "Forecast Weekly Demand - Year 1",
             each
                 ForecastDemand(
@@ -339,6 +469,26 @@ TwoYearsAgo =
                             null
                         else
                             Number.Round(_, 2),
+                    type number
+                },
+                                {
+                    "Q1 Average Demand",
+                    each Number.Round(_, 2),
+                    type number
+                },
+                {
+                    "Q2 Average Demand",
+                    each Number.Round(_, 2),
+                    type number
+                },
+                {
+                    "Q3 Average Demand",
+                    each Number.Round(_, 2),
+                    type number
+                },
+                {
+                    "Q4 Average Demand",
+                    each Number.Round(_, 2),
                     type number
                 }
             }
